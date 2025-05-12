@@ -1,16 +1,38 @@
 import streamlit as st
 import joblib
 import pandas as pd
+import zipfile
+import os
+
+# Chemin vers le fichier zip
+ZIP_PATH = "adulte_model.zip"
+EXTRACT_PATH = "models/"
+
+# Créer le dossier d'extraction s'il n'existe pas
+os.makedirs(EXTRACT_PATH, exist_ok=True)
+
+# Décompresser le fichier zip
+if not os.path.exists(os.path.join(EXTRACT_PATH, "adulte.joblib")):
+    try:
+        with zipfile.ZipFile(ZIP_PATH, 'r') as zip_ref:
+            zip_ref.extractall(EXTRACT_PATH)
+        st.success("Fichiers décompressés avec succès !")
+    except Exception as e:
+        st.error(f"Erreur lors de la décompression : {e}")
+
+# Chemins des fichiers extraits
+MODEL_PATH = os.path.join(EXTRACT_PATH, "adulte.joblib")
+COLS_PATH = os.path.join(EXTRACT_PATH, "colonnes.pkl")
 
 # Charger le modèle et les colonnes attendues
 @st.cache_resource
 def charger_modele_et_colonnes():
     try:
-        modele = joblib.load("adulte.joblib")
-        colonnes = joblib.load("adulte.joblib")  # Fichier séparé pour les colonnes
+        modele = joblib.load(MODEL_PATH)
+        colonnes = joblib.load(COLS_PATH)
         return modele, colonnes
     except Exception as e:
-        st.error(f"Erreur lors du chargement : {e}")
+        st.error(f"Erreur lors du chargement des fichiers : {e}")
         return None, None
 
 modele, colonnes_modele = charger_modele_et_colonnes()
@@ -42,17 +64,17 @@ with st.form("formulaire_entree"):
     with col1:
         age = st.number_input("Âge", min_value=18, max_value=100, value=30)
         classe_pro = st.selectbox("Classe professionnelle", 
-                               ['Privé', 'Auto-emploi', 'Gouvernement', 'Autre'])
+                                  ['Privé', 'Auto-emploi', 'Gouvernement', 'Autre'])
         education = st.selectbox("Niveau d'éducation", 
-                              ['Licence', 'Bac', 'Master', 'Doctorat'])
+                                 ['Licence', 'Bac', 'Master', 'Doctorat'])
     
     with col2:
         statut_matrimonial = st.selectbox("Statut matrimonial", 
-                                       ['Marié(e)', 'Divorcé(e)', 'Célibataire'])
+                                           ['Marié(e)', 'Divorcé(e)', 'Célibataire'])
         profession = st.selectbox("Profession", 
-                               ['Technique', 'Ventes', 'Administratif', 'Autre'])
+                                  ['Technique', 'Ventes', 'Administratif', 'Autre'])
         situation_familiale = st.selectbox("Situation familiale", 
-                                        ['Conjoint', 'Conjointe', 'Sans conjoint'])
+                                           ['Conjoint', 'Conjointe', 'Sans conjoint'])
     
     with col3:
         origine = st.selectbox("Origine ethnique", ['Blanc', 'Noir', 'Asiatique'])
@@ -61,7 +83,8 @@ with st.form("formulaire_entree"):
     
     soumettre = st.form_submit_button("Effectuer la prédiction")
 
-if soumettre and modele is not None:
+if soumettre and modele is not None and colonnes_modele is not None:
+    # Créer un DataFrame avec les données saisies
     donnees_entree = pd.DataFrame([{
         'age': age,
         'workclass': classe_pro,
@@ -89,6 +112,7 @@ if soumettre and modele is not None:
                     
     except Exception as e:
         st.error("Une erreur est survenue lors de la prédiction")
-        st.error(f"Détails de l'erreur : {str(e)}")
-        st.info("Veuillez vérifier que toutes les données sont correctement renseignées.")
-
+        st.error(f"Détails : {str(e)}")
+else:
+    if modele is None or colonnes_modele is None:
+        st.warning("Les fichiers nécessaires n'ont pas été chargés. Vérifiez le fichier zip.")
