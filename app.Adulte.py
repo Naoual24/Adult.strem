@@ -11,44 +11,57 @@ EXTRACT_PATH = "models/"
 # Créer le dossier d'extraction s'il n'existe pas
 os.makedirs(EXTRACT_PATH, exist_ok=True)
 
-# Décompresser le fichier zip
-if not os.path.exists(os.path.join(EXTRACT_PATH, "adulte.joblib")):
+# Décompresser le fichier zip s'il n'a pas encore été extrait
+MODEL_PATH = os.path.join(EXTRACT_PATH, "adulte.joblib")
+
+if not os.path.exists(MODEL_PATH):
     try:
         with zipfile.ZipFile(ZIP_PATH, 'r') as zip_ref:
             zip_ref.extractall(EXTRACT_PATH)
         st.success("Fichiers décompressés avec succès !")
     except Exception as e:
         st.error(f"Erreur lors de la décompression : {e}")
+else:
+    st.info("Le fichier modèle a déjà été extrait.")
 
-# Chemins des fichiers extraits
-MODEL_PATH = os.path.join(EXTRACT_PATH, "adulte.joblib")
-COLS_PATH = os.path.join(EXTRACT_PATH, "colonnes.pkl")
-
-# Charger le modèle et les colonnes attendues
+# Charger le modèle
 @st.cache_resource
-def charger_modele_et_colonnes():
+def charger_modele():
     try:
         modele = joblib.load(MODEL_PATH)
-        colonnes = joblib.load(COLS_PATH)
-        return modele, colonnes
+        return modele
     except Exception as e:
-        st.error(f"Erreur lors du chargement des fichiers : {e}")
-        return None, None
+        st.error(f"Erreur lors du chargement du modèle : {e}")
+        return None
 
-modele, colonnes_modele = charger_modele_et_colonnes()
+modele = charger_modele()
 
-# Fonction de prétraitement
+# Récupérer les colonnes exactes utilisées pour l'entraînement
+def obtenir_colonnes_model(modele):
+    # Récupérer les colonnes du modèle (ceci est spécifique à votre modèle, selon la méthode d'entraînement)
+    if hasattr(modele, 'feature_importances_'):  # Vérifier si le modèle a été formé
+        colonnes = modele.feature_importances_
+        # Ce code est un exemple ; vous devez récupérer les bonnes colonnes selon le type de modèle
+        return colonnes
+    return []
+
+# Assurez-vous de récupérer ou définir les colonnes exactes
+colonnes_modele = obtenir_colonnes_model(modele)  # Cette fonction doit renvoyer les bonnes colonnes du modèle
+
+# Fonction de prétraitement avec get_dummies
 def pretraiter_donnees(donnees_brutes):
-    # Encodage des variables catégorielles
+    # Encodage des variables catégorielles avec get_dummies
     donnees_encodees = pd.get_dummies(donnees_brutes)
     
-    # Ajouter les colonnes manquantes avec 0
+    # Ajouter les colonnes manquantes avec 0 pour assurer que le nombre de colonnes est le même
     for colonne in colonnes_modele:
         if colonne not in donnees_encodees.columns:
             donnees_encodees[colonne] = 0
     
     # Garder uniquement les colonnes nécessaires dans le bon ordre
-    return donnees_encodees[colonnes_modele]
+    donnees_encodees = donnees_encodees[colonnes_modele]
+    
+    return donnees_encodees
 
 # Interface utilisateur
 st.title("Prédiction de Revenu Annuel")
@@ -83,7 +96,7 @@ with st.form("formulaire_entree"):
     
     soumettre = st.form_submit_button("Effectuer la prédiction")
 
-if soumettre and modele is not None and colonnes_modele is not None:
+if soumettre and modele is not None:
     # Créer un DataFrame avec les données saisies
     donnees_entree = pd.DataFrame([{
         'age': age,
@@ -100,19 +113,24 @@ if soumettre and modele is not None and colonnes_modele is not None:
     try:
         # Prétraitement et prédiction
         donnees_traitees = pretraiter_donnees(donnees_entree)
-        prediction = modele.predict(donnees_traitees)[0]
-        probabilite = modele.predict_proba(donnees_traitees)[0][1]
         
-        # Affichage des résultats
-        if prediction == 1:
-            st.success(f"Prédiction : Revenu > 50 000$ (Probabilité : {probabilite:.1%})")
-            st.balloons()
+        # Vérifier si le nombre de colonnes correspond à celui attendu par le modèle
+        if donnees_traitees.shape[1] != len(colonnes_modele):
+            st.error(f"Le nombre de colonnes après prétraitement est incorrect ({donnees_traitees.shape[1]} au lieu de {len(colonnes_modele)}).")
         else:
-            st.warning(f"Prédiction : Revenu ≤ 50 000$ (Probabilité : {probabilite:.1%})")
+            prediction = modele.predict(donnees_traitees)[0]
+            probabilite = modele.predict_proba(donnees_traitees)[0][1]
+            
+            # Affichage des résultats
+            if prediction == 1:
+                st.success(f"Prédiction : Revenu > 50 000$ (Probabilité : {probabilite:.1%})")
+                st.balloons()
+            else:
+                st.warning(f"Prédiction : Revenu ≤ 50 000$ (Probabilité : {probabilite:.1%})")
                     
     except Exception as e:
         st.error("Une erreur est survenue lors de la prédiction")
         st.error(f"Détails : {str(e)}")
 else:
-    if modele is None or colonnes_modele is None:
-        st.warning("Les fichiers nécessaires n'ont pas été chargés. Vérifiez le fichier zip.")
+    if modele is None:
+        st.warning("Le modèle n'a pas été chargé correctement. Vérifiez le fichier adulte.joblib.")
